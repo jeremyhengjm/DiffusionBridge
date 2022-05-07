@@ -182,7 +182,7 @@ class model(torch.nn.Module):
         for m in range(M-1):
             stepsize = self.stepsizes[m]
             if m == 0:
-                t = self.time[m] + 0.5 * stepsize 
+                t = self.time[m] + 0.5 * stepsize # fudging a little here because of singularity
             else: 
                 t = self.time[m]
             t_next = self.time[m+1]
@@ -468,10 +468,10 @@ class model(torch.nn.Module):
         ema_momentum : momentum parameter of exponential moving average update
                         
         Returns
-        -------    
-        score_marginal_net : neural network approximation of score function of marginal (diffusion bridge) density
-
-        loss_values : value of loss function during learning
+        -------
+        output : dict containing     
+            score_marginal_net : neural network approximation of score function of marginal (diffusion bridge) density
+            loss_values : value of loss function during learning
         """
 
         M = self.num_steps
