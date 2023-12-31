@@ -392,12 +392,8 @@ class model(torch.nn.Module):
 
         for m in range(M):
             X_next = trajectories[:, m+1, :]
-            if (m == (M-1)):
-                # fudging a little here because of singularity                
-                t_next = self.time[m+1] - 0.25 * self.stepsizes[m]
-            else: 
-                t_next = self.time[m+1]
-            grad[:, m, :] = scaled_brownian[:, m, :] - epsilon * self.invSigma * (X0 - X_next) / (self.T - t_next)            
+            t_next = self.time[m+1]
+            grad[:, m, :] = scaled_brownian[:, m, :] - epsilon * self.invSigma * (X0 - X_next) / t_next
 
         return grad
 
@@ -603,12 +599,8 @@ class model(torch.nn.Module):
 
         for m in range(M,0,-1):
             Z_next = trajectories[:, m-1, :,]
-            if (m == 1):
-                # fudging a little here because of singularity                
-                t_next = 0.25 * self.stepsizes[m-1]
-            else: 
-                t_next = self.time[m-1]
-            grad[:, m-1, :] = scaled_brownian[:, m-1, :] - epsilon * self.invSigma * (XT - Z_next) / t_next
+            t_next = self.time[m-1]
+            grad[:, m-1, :] = scaled_brownian[:, m-1, :] - epsilon * self.invSigma * (XT - Z_next) / (self.T - t_next)
 
         return grad
 
