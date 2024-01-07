@@ -914,3 +914,5 @@ class model(torch.nn.Module):
             for name in auxiliary.params.keys()
         }
         output = {"auxiliary": auxiliary, "loss": loss_values, "params": out_params}
+
+        return output
