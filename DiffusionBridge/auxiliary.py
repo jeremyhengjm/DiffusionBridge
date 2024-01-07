@@ -6,14 +6,14 @@ from DiffusionBridge.utils import normal_logpdf
 
 
 class AuxiliaryDiffusion:
-    def __init__(self, model, type, initial_params):
+    def __init__(self, model, auxiliary_type, initial_params):
         self.Sigma = model.Sigma
         self.T = model.T
         self.invSigma = model.invSigma
         self.time = model.time
         self.stepsizes = model.stepsizes
-        self.f = model["f"]
-        self.type = type
+        self.f = model.f
+        self.type = auxiliary_type
         self.params = {
             name: torch.tensor(value, requires_grad=True)
             for name, value in initial_params.items()

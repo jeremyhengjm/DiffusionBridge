@@ -7,6 +7,7 @@ import torch.nn.functional as F
 from DiffusionBridge.neuralnet import ScoreNetwork, FullScoreNetwork
 from DiffusionBridge.ema import ema_register, ema_update, ema_copy
 from DiffusionBridge.utils import normal_logpdf
+from DiffusionBridge.auxiliary import AuxiliaryDiffusion
 
 
 def construct_time_discretization(terminal_time, num_steps):
@@ -818,3 +819,99 @@ class model(torch.nn.Module):
         output = {"net": score_net, "loss": loss_values}
 
         return output
+
+    def learn_guided_proposal(
+        self,
+        auxiliary_type,
+        initial_params,
+        initial_state,
+        terminal_state,
+        minibatch,
+        num_iterations,
+        learning_rate,
+    ):
+        """
+        Learn guided proposal bridge process.
+
+        Parameters
+        ----------
+        initial_params : neural network approximation of score function of transition density
+
+        initial_state : initial condition of size d
+
+        terminal_state : terminal condition of size d
+
+        minibatch : number of mini-batch samples desired
+
+        num_iterations : number of optimization iterations (divisible by num_batches)
+
+        learning_rate : learning rate of Adam optimizer
+
+        Returns
+        -------
+        auxiliary : class instance describing auxiliary process after learning
+
+        loss_values : value of loss function during learning
+
+        out_params : parameter values of auxiliary process during learning
+        """
+
+        M = self.num_steps
+        loss_values = torch.zeros(num_iterations)
+        params = list()
+
+        # create auxiliary diffusion
+        auxiliary = AuxiliaryDiffusion(self, auxiliary_type, initial_params)
+
+        # optimization
+        optimizer = torch.optim.SGD(
+            [tensor for name, tensor in auxiliary.params()], lr=learning_rate
+        )
+        for i in range(num_iterations):
+            with torch.no_grad():
+                # proposal drift defined by h-transform of auxiliary process
+                proposal_drift = lambda t, x: self.f(
+                    t, x
+                ) + self.Sigma * auxiliary.grad_logh(terminal_state, t, x)
+
+                # simulate trajectories from current guided proposal bridge process
+                simulation_output = self.simulate_proposal_bridge(
+                    proposal_drift,
+                    initial_state,
+                    terminal_state,
+                    minibatch,
+                )
+                trajectories = simulation_output["trajectories"]
+
+                # importance sampling approximation of diffusion bridge
+                log_weights = auxiliary.log_radon_nikodym(trajectories)
+                max_log_weights = torch.max(log_weights)
+                weights = torch.exp(log_weights - max_log_weights)
+                normalized_weights = weights / torch.sum(weights)
+
+            # estimate Kullback-Leibler divergence
+            log_rn = auxiliary.log_radon_nikodym(trajectories)
+            loss = torch.sum(log_rn * normalized_weights)
+
+            # backpropagation
+            loss.backward()
+
+            # optimization step and zero gradient
+            optimizer.step()
+            optimizer.zero_grad()
+
+            # iteration counter
+            current_loss = loss.item()
+            loss_values[i] = current_loss
+            if (i == 0) or ((i + 1) % 50 == 0):
+                print("Optimization iteration:", i + 1, "Loss:", current_loss)
+
+            # store parameters of auxiliary process
+            with torch.no_grad():
+                params.append(auxiliary.params)
+
+        # output
+        out_params = {
+            name: [p[name] for p in params] for name in auxiliary.params.keys()
+        }
+        output = {"auxiliary": auxiliary, "loss": loss_values, "params": out_params}
