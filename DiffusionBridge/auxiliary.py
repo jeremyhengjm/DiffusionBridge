@@ -55,7 +55,7 @@ class AuxiliaryDiffusion:
         if self.type == "brownian":
             return (
                 self.invSigma * (terminal_state - x) / (self.T - t)
-                - self.invSigma * self.params["alphas"]
+                - self.invSigma * self.params["alpha"]
             )
 
         if self.type == "ou":
