@@ -856,7 +856,6 @@ class model(torch.nn.Module):
         out_params : parameter values of auxiliary process during learning
         """
 
-        M = self.num_steps
         loss_values = torch.zeros(num_iterations)
         params = list()
 
@@ -865,7 +864,7 @@ class model(torch.nn.Module):
 
         # optimization
         optimizer = torch.optim.SGD(
-            [tensor for name, tensor in auxiliary.params()], lr=learning_rate
+            [tensor for name, tensor in auxiliary.params.items()], lr=learning_rate
         )
         for i in range(num_iterations):
             with torch.no_grad():
@@ -907,11 +906,11 @@ class model(torch.nn.Module):
                 print("Optimization iteration:", i + 1, "Loss:", current_loss)
 
             # store parameters of auxiliary process
-            with torch.no_grad():
-                params.append(auxiliary.params)
+            params.append(auxiliary.return_params())
 
         # output
         out_params = {
-            name: [p[name] for p in params] for name in auxiliary.params.keys()
+            name: torch.stack([p[name] for p in params])
+            for name in auxiliary.params.keys()
         }
         output = {"auxiliary": auxiliary, "loss": loss_values, "params": out_params}

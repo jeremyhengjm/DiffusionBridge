@@ -19,12 +19,15 @@ class AuxiliaryDiffusion:
             for name, value in initial_params.items()
         }
 
+    def return_params(self):
+        return {name: tensor.detach().clone() for name, tensor in self.params.items()}
+
     def auxiliary_f(self, t, x):
         if self.type == "brownian":
             return self.params["alpha"]
 
         if self.type == "ou":
-            return self.params["alpha"] + self.params["beta"] * x
+            return self.params["alpha"] - self.params["beta"] * x
 
     def transition_mean(self, t, x):
         if self.type == "brownian":
@@ -58,7 +61,7 @@ class AuxiliaryDiffusion:
         if self.type == "ou":
             return (
                 (terminal_state - self.transition_mean(self.T - t, x))
-                * torch.exp(-self.params["alpha"] * (self.T - t))
+                * torch.exp(-self.params["beta"] * (self.T - t))
                 / self.transition_var(self.T - t)
             )
 
