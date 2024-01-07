@@ -42,8 +42,10 @@ class AuxiliaryDiffusion:
             return t * self.Sigma
 
         if self.type == "ou":
-            return (1.0 - torch.exp(-2.0 * self.params["beta"] * t)) / (
-                2.0 * self.params["beta"]
+            return (
+                self.Sigma
+                * (1.0 - torch.exp(-2.0 * self.params["beta"] * t))
+                / (2.0 * self.params["beta"])
             )
 
     def log_transition(self, s, xs, t, xt):
