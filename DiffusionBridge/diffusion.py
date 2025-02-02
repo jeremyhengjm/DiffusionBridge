@@ -86,7 +86,7 @@ class model(torch.nn.Module):
         terminal_state,
         epsilon,
         num_samples=1,
-        modify=False,
+        modify=None,
         full_score=False,
         new_num_steps=None,
     ):
@@ -105,7 +105,7 @@ class model(torch.nn.Module):
 
         num_samples : number of samples desired
 
-        modify : bool specifying if variance of transitions are modified
+        modify : "variance" to modify variance of transitions, "time" if time-changing grid
 
         full_score : bool specifying if the full score function is employed
 
@@ -121,6 +121,7 @@ class model(torch.nn.Module):
         """
 
         # initialize and preallocate
+        T = self.T
         if len(initial_state.shape) == 1:
             X0 = initial_state.repeat(num_samples, 1)  # size (N, d)
             N = num_samples
@@ -153,7 +154,18 @@ class model(torch.nn.Module):
         for m in range(M, 0, -1):
             stepsize = stepsizes[m - 1]
             t = timesteps[m]
-            t_next = timesteps[m - 1]
+            if modify == "time":  # time-change in Van der Meulen and Schauer (2017)
+                stepsize *= 2.0 * (1.0 - (T - t) / T)
+                t = T - (T - t) * (2.0 - (T - t) / T)
+                scaling = stepsize
+            elif modify == "variance":  # modified Euler-Maruyama
+                t_next = timesteps[m - 1]
+                scaling = (
+                    stepsize * t_next / t if m > 1 else stepsize * 0.25 * stepsize / t
+                )  # fudging a little here because of singularity
+            else:  # Euler-Maruyama
+                scaling = stepsize
+
             if full_score:
                 score = score_net(t.repeat((N, 1)), Z, X0)  # size (N, d)
             else:
@@ -162,10 +174,6 @@ class model(torch.nn.Module):
             drift = -self.f(t, Z) + self.Sigma * score + epsilon * (X0 - Z) / t
             euler = Z + stepsize * drift
             if m > 1:
-                if modify:
-                    scaling = stepsize * t_next / t
-                else:
-                    scaling = stepsize
                 brownian = torch.sqrt(scaling) * torch.randn(Z.shape)  # size (N x d)
                 Z = euler + self.sigma * brownian
                 logdensity += normal_logpdf(Z, euler, scaling * self.Sigma)
@@ -174,12 +182,6 @@ class model(torch.nn.Module):
                     -(self.invSigma / scaling) * self.sigma * brownian
                 )
             else:
-                # terminal constraint
-                if modify:
-                    # fudging a little here because of singularity
-                    scaling = stepsize * 0.25 * stepsize / t
-                else:
-                    scaling = stepsize
                 trajectories[:, 0, :] = X0
                 scaled_brownian[:, 0, :] = -(self.invSigma / scaling) * (X0 - euler)
 
@@ -201,7 +203,7 @@ class model(torch.nn.Module):
         terminal_state,
         epsilon,
         num_samples=1,
-        modify=False,
+        modify=None,
         full_score=False,
         new_num_steps=None,
     ):
@@ -222,7 +224,7 @@ class model(torch.nn.Module):
 
         num_samples : number of samples desired
 
-        modify : bool specifying if variance of transitions are modified
+        modify : "variance" to modify variance of transitions, "time" if time-changing grid
 
         full_score : bool specifying if the full score function is employed
 
@@ -273,7 +275,17 @@ class model(torch.nn.Module):
                 t = timesteps[m] + 0.5 * stepsize
             else:
                 t = timesteps[m]
-            t_next = timesteps[m + 1]
+
+            if modify == "time":  # time-change in Van der Meulen and Schauer (2017)
+                stepsize *= 2.0 * (1.0 - t / T)
+                t = t * (2.0 - t / T)
+                scaling = stepsize
+            elif modify == "variance":  # modified Euler-Maruyama
+                t_next = timesteps[m + 1]
+                scaling = stepsize * (T - t_next) / (T - t)
+            else:  # Euler-Maruyama
+                scaling = stepsize
+
             if full_score:
                 score_marginal = score_marginal_net(
                     t.repeat(N, 1), X, X0, XT
@@ -292,10 +304,6 @@ class model(torch.nn.Module):
                 + epsilon * ((XT - X) / (T - t) - (X0 - X) / t)
             )
             euler = X + stepsize * drift
-            if modify:
-                scaling = stepsize * (T - t_next) / (T - t)
-            else:
-                scaling = stepsize
             brownian = torch.sqrt(scaling) * torch.randn(X.shape)  # size (N x d)
             X = euler + self.sigma * brownian
             logdensity += normal_logpdf(X, euler, scaling * self.Sigma)
@@ -315,7 +323,7 @@ class model(torch.nn.Module):
         initial_state,
         terminal_state,
         num_samples,
-        modify=False,
+        modify=None,
         new_num_steps=None,
     ):
         """
@@ -331,7 +339,7 @@ class model(torch.nn.Module):
 
         num_samples : number of samples desired
 
-        modify : bool specifying if variance of transitions are modified
+        modify : "variance" to modify variance of transitions, "time" if time-changing grid
 
         new_num_steps : new number of time-discretization steps
 
@@ -364,12 +372,16 @@ class model(torch.nn.Module):
         for m in range(M - 1):
             stepsize = stepsizes[m]
             t = timesteps[m]
-            t_next = timesteps[m + 1]
-            euler = X + stepsize * drift(t, X)
-            if modify:
-                scaling = stepsize * (T - t_next) / (T - t)
-            else:
+            if modify == "time":  # time-change in Van der Meulen and Schauer (2017)
+                stepsize *= 2.0 * (1.0 - t / T)
+                t = t * (2.0 - t / T)
                 scaling = stepsize
+            elif modify == "variance":  # modified Euler-Maruyama
+                t_next = timesteps[m + 1]
+                scaling = stepsize * (T - t_next) / (T - t)
+            else:  # Euler-Maruyama
+                scaling = stepsize
+            euler = X + stepsize * drift(t, X)
             brownian = torch.sqrt(scaling) * torch.randn(X.shape)  # size (N x d)
             X = euler + self.sigma * brownian
             logdensity += normal_logpdf(X, euler, scaling * self.Sigma)
@@ -383,13 +395,15 @@ class model(torch.nn.Module):
 
         return output
 
-    def law_bridge(self, trajectories, new_num_steps=None):
+    def law_bridge(self, trajectories, modify=None, new_num_steps=None):
         """
         Evaluate law of (time-discretized) diffusion bridge process.
 
         Parameters
         ----------
         trajectories : realizations of time-discretized proposal bridge process satisfying initial and terminal constraints (N, M+1, d)
+
+        modify : "time-forward" or "time-backward if time-changing grid for forward/backward processes
 
         new_num_steps : new number of time-discretization steps
 
@@ -398,6 +412,7 @@ class model(torch.nn.Module):
         logdensity : log-density values of size N
         """
 
+        T = self.T
         N = trajectories.shape[0]
         logdensity = torch.zeros(N)
 
@@ -408,6 +423,13 @@ class model(torch.nn.Module):
         else:
             M = new_num_steps
             (timesteps, stepsizes) = construct_time_discretization(self.T, M)
+
+        if modify == "time-forward":
+            timesteps = timesteps * (2.0 - timesteps / T)
+            stepsizes = stepsizes * 2.0 * (1.0 - timesteps[:M] / T)
+        elif modify == "time-backward":
+            timesteps = T - (T - timesteps) * (2.0 - (T - timesteps) / T)
+            stepsizes = stepsizes * 2.0 * (1.0 - (T - timesteps[1:]) / T)
 
         for m in range(M):
             stepsize = stepsizes[m]
@@ -829,6 +851,7 @@ class model(torch.nn.Module):
         minibatch,
         num_iterations,
         learning_rate,
+        modify,
     ):
         """
         Learn guided proposal bridge process.
@@ -846,6 +869,8 @@ class model(torch.nn.Module):
         num_iterations : number of optimization iterations (divisible by num_batches)
 
         learning_rate : learning rate of Adam optimizer
+
+        modify : "time" if time-changing grid
 
         Returns
         -------
@@ -875,21 +900,18 @@ class model(torch.nn.Module):
 
                 # simulate trajectories from current guided proposal bridge process
                 simulation_output = self.simulate_proposal_bridge(
-                    proposal_drift,
-                    initial_state,
-                    terminal_state,
-                    minibatch,
+                    proposal_drift, initial_state, terminal_state, minibatch, modify
                 )
                 trajectories = simulation_output["trajectories"]
 
                 # importance sampling approximation of diffusion bridge
-                log_weights = auxiliary.log_radon_nikodym(trajectories)
+                log_weights = auxiliary.log_radon_nikodym(trajectories, modify)
                 max_log_weights = torch.max(log_weights)
                 weights = torch.exp(log_weights - max_log_weights)
                 normalized_weights = weights / torch.sum(weights)
 
             # estimate Kullback-Leibler divergence
-            log_rn = auxiliary.log_radon_nikodym(trajectories)
+            log_rn = auxiliary.log_radon_nikodym(trajectories, modify)
             loss = torch.sum(log_rn * normalized_weights)
 
             # backpropagation

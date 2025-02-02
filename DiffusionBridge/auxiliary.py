@@ -1,6 +1,7 @@
 """
 A module to define auxiliary diffusions needed to construct guided proposal bridge processes.
 """
+
 import torch
 from DiffusionBridge.utils import normal_logpdf
 
@@ -67,7 +68,7 @@ class AuxiliaryDiffusion:
                 / self.transition_var(self.T - t)
             )
 
-    def log_radon_nikodym(self, trajectories):
+    def log_radon_nikodym(self, trajectories, modify):
         N = trajectories.shape[0]
         M = trajectories.shape[1] - 1
         initial_state = trajectories[:, 0, :]
@@ -75,7 +76,12 @@ class AuxiliaryDiffusion:
         G = torch.zeros(N, M)
 
         for m in range(M):
-            t_current = self.time[m]
+            if modify == "time":
+                t_current = self.time[m] * (2.0 - self.time[m] / self.T)
+                stepsize = 2.0 * (1.0 - t_current / self.T) * self.stepsizes[m]
+            else:
+                t_current = self.time[m]
+                stepsize = self.stepsizes[m]
             X_current = trajectories[:, m, :]
             diff_f = self.f(t_current, X_current) - self.auxiliary_f(
                 t_current, X_current
@@ -83,7 +89,7 @@ class AuxiliaryDiffusion:
             grad_logh = self.grad_logh(
                 terminal_state, t_current, X_current
             )  # size (N, d)
-            G[:, m] = torch.sum(diff_f * grad_logh, 1) * self.stepsizes[m]  # size (N)
+            G[:, m] = torch.sum(diff_f * grad_logh, 1) * stepsize  # size (N)
 
         log_rn = torch.sum(G, 1) + self.log_transition(
             0.0, initial_state, self.T, terminal_state
