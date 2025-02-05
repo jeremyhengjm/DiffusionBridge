@@ -7,7 +7,8 @@ from DiffusionBridge.utils import normal_logpdf
 
 
 class AuxiliaryDiffusion:
-    def __init__(self, model, auxiliary_type, initial_params):
+
+    def __init__(self, model, auxiliary_type, initial_params, requires_grad=True):
         self.Sigma = model.Sigma
         self.T = model.T
         self.invSigma = model.invSigma
@@ -16,7 +17,7 @@ class AuxiliaryDiffusion:
         self.f = model.f
         self.type = auxiliary_type
         self.params = {
-            name: torch.tensor(value, requires_grad=True)
+            name: torch.tensor(value, requires_grad=requires_grad)
             for name, value in initial_params.items()
         }
 
@@ -24,14 +25,14 @@ class AuxiliaryDiffusion:
         return {name: tensor.detach().clone() for name, tensor in self.params.items()}
 
     def auxiliary_f(self, t, x):
-        if self.type == "brownian":
+        if self.type == "bm":
             return self.params["alpha"]
 
         if self.type == "ou":
             return self.params["alpha"] - self.params["beta"] * x
 
     def transition_mean(self, t, x):
-        if self.type == "brownian":
+        if self.type == "bm":
             return x + t * self.params["alpha"]
 
         if self.type == "ou":
@@ -39,7 +40,7 @@ class AuxiliaryDiffusion:
             return ratio + (x - ratio) * torch.exp(-self.params["beta"] * t)
 
     def transition_var(self, t):
-        if self.type == "brownian":
+        if self.type == "bm":
             return t * self.Sigma
 
         if self.type == "ou":
@@ -55,7 +56,7 @@ class AuxiliaryDiffusion:
         )
 
     def grad_logh(self, terminal_state, t, x):
-        if self.type == "brownian":
+        if self.type == "bm":
             return (
                 self.invSigma * (terminal_state - x) / (self.T - t)
                 - self.invSigma * self.params["alpha"]
@@ -76,9 +77,9 @@ class AuxiliaryDiffusion:
         G = torch.zeros(N, M)
 
         for m in range(M):
-            if modify == "time":
+            if modify:
                 t_current = self.time[m] * (2.0 - self.time[m] / self.T)
-                stepsize = 2.0 * (1.0 - t_current / self.T) * self.stepsizes[m]
+                stepsize = self.stepsizes[m] * 2.0 * (1.0 - self.time[m] / self.T)
             else:
                 t_current = self.time[m]
                 stepsize = self.stepsizes[m]

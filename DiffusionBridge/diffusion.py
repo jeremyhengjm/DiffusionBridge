@@ -86,7 +86,7 @@ class model(torch.nn.Module):
         terminal_state,
         epsilon,
         num_samples=1,
-        modify=None,
+        modify=True,
         full_score=False,
         new_num_steps=None,
     ):
@@ -105,7 +105,7 @@ class model(torch.nn.Module):
 
         num_samples : number of samples desired
 
-        modify : "variance" to modify variance of transitions, "time" if time-changing grid
+        modify : bool to modify variance of transitions
 
         full_score : bool specifying if the full score function is employed
 
@@ -154,11 +154,7 @@ class model(torch.nn.Module):
         for m in range(M, 0, -1):
             stepsize = stepsizes[m - 1]
             t = timesteps[m]
-            if modify == "time":  # time-change in Van der Meulen and Schauer (2017)
-                stepsize *= 2.0 * (1.0 - (T - t) / T)
-                t = T - (T - t) * (2.0 - (T - t) / T)
-                scaling = stepsize
-            elif modify == "variance":  # modified Euler-Maruyama
+            if modify:  # modified Euler-Maruyama
                 t_next = timesteps[m - 1]
                 scaling = (
                     stepsize * t_next / t if m > 1 else stepsize * 0.25 * stepsize / t
@@ -224,7 +220,7 @@ class model(torch.nn.Module):
 
         num_samples : number of samples desired
 
-        modify : "variance" to modify variance of transitions, "time" if time-changing grid
+        modify : bool to modify variance of transitions
 
         full_score : bool specifying if the full score function is employed
 
@@ -270,17 +266,12 @@ class model(torch.nn.Module):
         # simulate process forwards in time
         for m in range(M - 1):
             stepsize = stepsizes[m]
-            if m == 0:
-                # fudging a little here because of singularity
+            if m == 0:  # fudging a little here because of singularity
                 t = timesteps[m] + 0.5 * stepsize
             else:
                 t = timesteps[m]
 
-            if modify == "time":  # time-change in Van der Meulen and Schauer (2017)
-                stepsize *= 2.0 * (1.0 - t / T)
-                t = t * (2.0 - t / T)
-                scaling = stepsize
-            elif modify == "variance":  # modified Euler-Maruyama
+            if modify:  # modified Euler-Maruyama
                 t_next = timesteps[m + 1]
                 scaling = stepsize * (T - t_next) / (T - t)
             else:  # Euler-Maruyama
@@ -373,8 +364,8 @@ class model(torch.nn.Module):
             stepsize = stepsizes[m]
             t = timesteps[m]
             if modify == "time":  # time-change in Van der Meulen and Schauer (2017)
-                stepsize *= 2.0 * (1.0 - t / T)
-                t = t * (2.0 - t / T)
+                t = timesteps[m] * (2.0 - timesteps[m] / T)
+                stepsize = stepsizes[m] * 2.0 * (1.0 - timesteps[m] / T)
                 scaling = stepsize
             elif modify == "variance":  # modified Euler-Maruyama
                 t_next = timesteps[m + 1]
@@ -403,7 +394,7 @@ class model(torch.nn.Module):
         ----------
         trajectories : realizations of time-discretized proposal bridge process satisfying initial and terminal constraints (N, M+1, d)
 
-        modify : "time-forward" or "time-backward if time-changing grid for forward/backward processes
+        modify : bool to modify variance of transitions
 
         new_num_steps : new number of time-discretization steps
 
@@ -423,13 +414,6 @@ class model(torch.nn.Module):
         else:
             M = new_num_steps
             (timesteps, stepsizes) = construct_time_discretization(self.T, M)
-
-        if modify == "time-forward":
-            timesteps = timesteps * (2.0 - timesteps / T)
-            stepsizes = stepsizes * 2.0 * (1.0 - timesteps[:M] / T)
-        elif modify == "time-backward":
-            timesteps = T - (T - timesteps) * (2.0 - (T - timesteps) / T)
-            stepsizes = stepsizes * 2.0 * (1.0 - (T - timesteps[1:]) / T)
 
         for m in range(M):
             stepsize = stepsizes[m]
