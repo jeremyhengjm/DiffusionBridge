@@ -199,7 +199,7 @@ class model(torch.nn.Module):
         terminal_state,
         epsilon,
         num_samples=1,
-        modify=None,
+        modify=True,
         full_score=False,
         new_num_steps=None,
     ):
@@ -386,7 +386,7 @@ class model(torch.nn.Module):
 
         return output
 
-    def law_bridge(self, trajectories, modify=None, new_num_steps=None):
+    def law_bridge(self, trajectories, new_num_steps=None):
         """
         Evaluate law of (time-discretized) diffusion bridge process.
 
@@ -466,6 +466,7 @@ class model(torch.nn.Module):
         num_iterations,
         learning_rate,
         ema_momentum,
+        network_config={},
     ):
         """
         Learn approximation of score transition using score matching.
@@ -486,6 +487,8 @@ class model(torch.nn.Module):
 
         ema_momentum : momentum parameter of exponential moving average update
 
+        network_config : neural network configuration
+
         Returns
         -------
         output : dict containing
@@ -502,7 +505,7 @@ class model(torch.nn.Module):
         loss_values = torch.zeros(num_iterations)
 
         # create score network
-        score_net = ScoreNetwork(dimension=self.d)
+        score_net = ScoreNetwork(dimension=self.d, **network_config)
         ema_parameters = ema_register(score_net)
 
         # optimization
@@ -573,6 +576,7 @@ class model(torch.nn.Module):
         num_iterations,
         learning_rate,
         ema_momentum,
+        network_config={},
     ):
         """
         Learn full approximation of score transition using score matching.
@@ -595,6 +599,8 @@ class model(torch.nn.Module):
 
         ema_momentum : momentum parameter of exponential moving average update
 
+        network_config : neural network configuration
+
         Returns
         -------
         output : dict containing
@@ -612,7 +618,7 @@ class model(torch.nn.Module):
         loss_values = torch.zeros(num_iterations)
 
         # create score network
-        score_net = FullScoreNetwork(dimension=self.d)
+        score_net = FullScoreNetwork(dimension=self.d, **network_config)
         ema_parameters = ema_register(score_net)
 
         # optimization
@@ -719,6 +725,7 @@ class model(torch.nn.Module):
         num_iterations,
         learning_rate,
         ema_momentum,
+        network_config={},
     ):
         """
         Learn approximation of score of marginal (diffusion bridge) density using score matching.
@@ -741,6 +748,8 @@ class model(torch.nn.Module):
 
         ema_momentum : momentum parameter of exponential moving average update
 
+        network_config : neural network configuration
+
         Returns
         -------
         score_marginal_net : neural network approximation of score function of marginal (diffusion bridge) density
@@ -757,7 +766,7 @@ class model(torch.nn.Module):
         loss_values = torch.zeros(num_iterations)
 
         # create score network
-        score_net = ScoreNetwork(dimension=self.d)
+        score_net = ScoreNetwork(dimension=self.d, **network_config)
         ema_parameters = ema_register(score_net)
 
         # optimization
@@ -828,21 +837,20 @@ class model(torch.nn.Module):
 
     def learn_guided_proposal(
         self,
-        auxiliary_type,
-        initial_params,
+        auxiliary,
         initial_state,
         terminal_state,
         minibatch,
         num_iterations,
         learning_rate,
-        modify,
+        modify=True,
     ):
         """
         Learn guided proposal bridge process.
 
         Parameters
         ----------
-        initial_params : neural network approximation of score function of transition density
+        auxiliary : class instance describing auxiliary process after learning
 
         initial_state : initial condition of size d
 
@@ -858,7 +866,6 @@ class model(torch.nn.Module):
 
         Returns
         -------
-        auxiliary : class instance describing auxiliary process after learning
 
         loss_values : value of loss function during learning
 
@@ -867,9 +874,6 @@ class model(torch.nn.Module):
 
         loss_values = torch.zeros(num_iterations)
         params = list()
-
-        # create auxiliary diffusion
-        auxiliary = AuxiliaryDiffusion(self, auxiliary_type, initial_params)
 
         # optimization
         optimizer = torch.optim.SGD(
@@ -919,6 +923,6 @@ class model(torch.nn.Module):
             name: torch.stack([p[name] for p in params])
             for name in auxiliary.params.keys()
         }
-        output = {"auxiliary": auxiliary, "loss": loss_values, "params": out_params}
+        output = {"loss": loss_values, "params": out_params}
 
         return output
