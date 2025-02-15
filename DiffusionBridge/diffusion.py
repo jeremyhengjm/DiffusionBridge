@@ -881,6 +881,9 @@ class model(torch.nn.Module):
         )
         for i in range(num_iterations):
             with torch.no_grad():
+                # project parameters if necessary
+                auxiliary.project_params()
+
                 # proposal drift defined by h-transform of auxiliary process
                 proposal_drift = lambda t, x: self.f(
                     t, x

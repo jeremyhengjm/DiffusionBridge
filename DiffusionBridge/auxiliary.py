@@ -3,7 +3,7 @@ A module to define auxiliary diffusions needed to construct guided proposal brid
 """
 
 import torch
-from DiffusionBridge.utils import normal_logpdf
+from DiffusionBridge.utils import normal_logpdf, mv_normal_logpdf
 
 
 class AuxiliaryDiffusion:
@@ -21,6 +21,11 @@ class AuxiliaryDiffusion:
             for name, value in initial_params.items()
         }
 
+    def project_params(self):
+        if self.type == "ou-full":
+            U, _, V = torch.svd(self.params["eigvecs"])
+            self.params["eigvecs"] = U @ V.T  # for orthogonality
+
     def return_params(self):
         return {name: tensor.detach().clone() for name, tensor in self.params.items()}
 
@@ -31,6 +36,14 @@ class AuxiliaryDiffusion:
         if self.type == "ou":
             return self.params["alpha"] - self.params["beta"] * x
 
+        if self.type == "ou-full":
+            mat = (
+                self.params["eigvecs"]
+                @ torch.diag(self.params["eigvals"])
+                @ self.params["eigvecs"].T
+            )
+            return (self.params["theta"] - x) @ mat
+
     def transition_mean(self, t, x):
         if self.type == "bm":
             return x + t * self.params["alpha"]
@@ -38,6 +51,14 @@ class AuxiliaryDiffusion:
         if self.type == "ou":
             ratio = self.params["alpha"] / self.params["beta"]
             return ratio + (x - ratio) * torch.exp(-self.params["beta"] * t)
+
+        if self.type == "ou-full":
+            mat_exp = (
+                self.params["eigvecs"]
+                @ torch.diag(torch.exp(-t * self.params["eigvals"]))
+                @ self.params["eigvecs"].T
+            )
+            return (x - self.params["theta"]) @ mat_exp + self.params["theta"]
 
     def transition_var(self, t):
         if self.type == "bm":
@@ -50,10 +71,25 @@ class AuxiliaryDiffusion:
                 / (2.0 * self.params["beta"])
             )
 
+        if self.type == "ou-full":
+            cov_eigvals = (
+                0.5
+                * self.Sigma
+                * (1.0 / self.params["eigvals"])
+                * (1.0 - torch.exp(-2.0 * t * self.params["eigvals"]))
+            )  # return eigenvalues in this case
+            return cov_eigvals
+
     def log_transition(self, s, xs, t, xt):
-        return normal_logpdf(
-            xt, self.transition_mean(t - s, xs), self.transition_var(t - s)
-        )
+        if self.type == "ou-full":
+            cov_eigvals = self.transition_var(t - s)
+            return mv_normal_logpdf(
+                xt, self.transition_mean(t - s, xs), cov_eigvals, self.params["eigvecs"]
+            )  # take eigenvectors and eigenvalues as input in this case
+        else:
+            return normal_logpdf(
+                xt, self.transition_mean(t - s, xs), self.transition_var(t - s)
+            )
 
     def grad_logh(self, terminal_state, t, x):
         if self.type == "bm":
@@ -69,13 +105,24 @@ class AuxiliaryDiffusion:
                 / self.transition_var(self.T - t)
             )
 
+        if self.type == "ou-full":
+            cov_eigvals = self.transition_var(self.T - t)
+            curr_eigvals = (1.0 / cov_eigvals) * torch.exp(
+                -(self.T - t) * self.params["eigvals"]
+            )
+            curr_mat = (
+                self.params["eigvecs"]
+                @ torch.diag(curr_eigvals)
+                @ self.params["eigvecs"].T
+            )
+            return (terminal_state - self.transition_mean(self.T - t, x)) @ curr_mat
+
     def log_radon_nikodym(self, trajectories, modify=True):
         N = trajectories.shape[0]
         M = trajectories.shape[1] - 1
         initial_state = trajectories[:, 0, :]
         terminal_state = trajectories[:, -1, :]
         G = torch.zeros(N, M)
-
         for m in range(M):
             if modify:  # time-change in Van der Meulen and Schauer (2017)
                 t_current = self.time[m] * (2.0 - self.time[m] / self.T)
