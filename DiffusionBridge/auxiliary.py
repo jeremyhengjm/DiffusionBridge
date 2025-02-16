@@ -24,7 +24,7 @@ class AuxiliaryDiffusion:
     def project_params(self):
         if self.type == "ou-full":
             U, _, V = torch.svd(self.params["eigvecs"])
-            self.params["eigvecs"] = U @ V.T  # for orthogonality
+            self.params["eigvecs"][:, :] = U @ V.T  # for orthogonality
 
     def return_params(self):
         return {name: tensor.detach().clone() for name, tensor in self.params.items()}
