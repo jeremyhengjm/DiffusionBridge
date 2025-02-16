@@ -843,7 +843,7 @@ class model(torch.nn.Module):
         minibatch,
         num_iterations,
         learning_rate,
-        modify=True,
+        modify="time",
     ):
         """
         Learn guided proposal bridge process.

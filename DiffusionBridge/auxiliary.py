@@ -117,14 +117,14 @@ class AuxiliaryDiffusion:
             )
             return (terminal_state - self.transition_mean(self.T - t, x)) @ curr_mat
 
-    def log_radon_nikodym(self, trajectories, modify=True):
+    def log_radon_nikodym(self, trajectories, modify="time"):
         N = trajectories.shape[0]
         M = trajectories.shape[1] - 1
         initial_state = trajectories[:, 0, :]
         terminal_state = trajectories[:, -1, :]
         G = torch.zeros(N, M)
         for m in range(M):
-            if modify:  # time-change in Van der Meulen and Schauer (2017)
+            if modify == "time":  # time-change in Van der Meulen and Schauer (2017)
                 t_current = self.time[m] * (2.0 - self.time[m] / self.T)
                 stepsize = self.stepsizes[m] * 2.0 * (1.0 - self.time[m] / self.T)
             else:
