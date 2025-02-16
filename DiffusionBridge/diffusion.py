@@ -876,7 +876,7 @@ class model(torch.nn.Module):
         params = list()
 
         # optimization
-        optimizer = torch.optim.SGD(
+        optimizer = torch.optim.Adam(
             [tensor for name, tensor in auxiliary.params.items()], lr=learning_rate
         )
         for i in range(num_iterations):
